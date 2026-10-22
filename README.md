@@ -4,6 +4,9 @@ A small serverless "contact us" service. A visitor fills out a form on a static 
 the inquiry is saved, and the owner gets an email with the details. Built by Dilan Patel
 for CS 79C (Santa Monica College), AWS Architecture Portfolio Project.
 
+> **Status:** the deployment was torn down on 21 Oct 2026 (22:03 PDT), so the site and API are no longer live.
+> It redeploys from a fresh clone in about 77 seconds with the command in the Deploy section below.
+
 ## Architecture
 
 ![Architecture diagram: S3 form to API Gateway, Lambda, DynamoDB and SES](docs/architecture.svg)
