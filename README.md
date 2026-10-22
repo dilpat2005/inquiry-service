@@ -18,17 +18,6 @@ for CS 79C (Santa Monica College), AWS Architecture Portfolio Project.
 
 All infrastructure is in `template.yaml` (CloudFormation).
 
-### Why these services (and what I rejected)
-
-| Service | Chosen because | Rejected alternative | Why rejected |
-|---|---|---|---|
-| S3 static website | Plain HTML, nothing to run, pennies per month | EC2 + nginx; Amplify | EC2 bills while idle and needs patching; Amplify hides the architecture |
-| API Gateway HTTP API | HTTPS endpoint, CORS and throttling at about $1 per million requests | REST API; Lambda Function URL | REST API costs more for unused features; a Function URL has no throttling |
-| Lambda | Runs only on submit, scales to zero, nothing to patch | EC2; Fargate | Both bill while idle and add operating work |
-| DynamoDB (on-demand) | One key-value pattern, TTL, conditional writes for idempotency | RDS | Always-on cost and maintenance for one simple table |
-| SES | Formatted email from my own DKIM-authenticated domain, Reply-To the visitor | SNS email | SNS cannot format the message or set Reply-To |
-| CloudFormation | Native to AWS, one command deploys or deletes everything | Terraform | An extra tool and state file with no benefit for one region |
-
 ## Deploy
 
 Prerequisites: AWS CLI configured for `us-west-2`, `zip`, and a domain you control that is
