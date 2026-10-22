@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contact Us</title>
+  <style>
+    body { font-family: -apple-system, Helvetica, Arial, sans-serif; background: #f5f6f8; margin: 0; color: #1c1e21; }
+    main { max-width: 480px; margin: 40px auto; padding: 0 16px; }
+    form { background: #fff; padding: 24px; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+    h1 { margin-top: 0; font-size: 1.4rem; }
+    label { display: block; margin: 14px 0 4px; font-weight: 600; font-size: .9rem; }
+    input, textarea { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #c8ccd0; border-radius: 6px; font: inherit; }
+    textarea { min-height: 120px; resize: vertical; }
+    button { margin-top: 18px; width: 100%; padding: 12px; border: 0; border-radius: 6px; background: #2563eb; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: default; }
+    #status { margin-top: 14px; font-size: .95rem; }
+    .ok { color: #15803d; } .err { color: #b91c1c; }
+    .hp { position: absolute; left: -9999px; }
+    footer { text-align: center; margin: 16px 0; font-size: .8rem; color: #666; }
+  </style>
+</head>
+<body>
+<main>
+  <form id="form" method="post" novalidate>
+    <h1>Send us an inquiry</h1>
+    <label for="name">Name</label>
+    <input id="name" name="name" maxlength="100" required>
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" maxlength="254" required>
+    <label for="phone">Phone (optional)</label>
+    <input id="phone" name="phone" type="tel" maxlength="20">
+    <label for="message">Message</label>
+    <textarea id="message" name="message" maxlength="2000" required></textarea>
+    <div class="hp" aria-hidden="true">
+      <label for="website">Leave this empty</label>
+      <input id="website" name="website" tabindex="-1" autocomplete="off">
+    </div>
+    <button id="send" type="submit">Send</button>
+    <div id="status" role="status"></div>
+  </form>
+  <footer>Built by Dilan Patel &middot; CS 79C final project</footer>
+</main>
+<script src="config.js"></script>
+<script>
+  const form = document.getElementById("form");
+  const statusEl = document.getElementById("status");
+  const sendBtn = document.getElementById("send");
+  // crypto.randomUUID() only exists on HTTPS pages, and this static site is plain HTTP.
+  function newId() {
+    if (crypto.randomUUID) return crypto.randomUUID();
+    const b = crypto.getRandomValues(new Uint8Array(16));
+    b[6] = (b[6] & 15) | 64;
+    b[8] = (b[8] & 63) | 128;
+    const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  }
+  let requestId = newId();
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    statusEl.textContent = "";
+    statusEl.className = "";
+    sendBtn.disabled = true;
+    const payload = Object.fromEntries(new FormData(form));
+    payload.requestId = requestId;
+    try {
+      const res = await fetch(window.INQUIRY_API_URL + "/inquiries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Something went wrong.");
+      statusEl.textContent = "Thanks! Your inquiry was sent.";
+      statusEl.className = "ok";
+      form.reset();
+      requestId = newId();
+    } catch (err) {
+      statusEl.textContent = err.message;
+      statusEl.className = "err";
+    } finally {
+      sendBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

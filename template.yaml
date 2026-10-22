@@ -1,0 +1,177 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Inquiry form -> API Gateway -> Lambda -> DynamoDB -> SES.
+  CS 79C final project by Dilan Patel.
+
+Parameters:
+  OwnerEmail:
+    Type: String
+    AllowedPattern: '[^@\s]+@[^@\s]+\.[^@\s]+'
+    Description: >-
+      Where inquiry notifications are delivered. In the SES sandbox this must be a
+      verified address or an address on a verified domain.
+  SenderEmail:
+    Type: String
+    AllowedPattern: '[^@\s]+@[^@\s]+\.[^@\s]+'
+    Description: >-
+      From address for notifications. Its domain must be a verified SES identity with
+      DKIM set up, so mail is authenticated and reaches the inbox instead of spam.
+
+Resources:
+  # ---------- Front end: static site on S3 ----------
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      WebsiteConfiguration:
+        IndexDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadForStaticSite
+            Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub '${SiteBucket.Arn}/*'
+
+  # ---------- Data: DynamoDB ----------
+  InquiryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: inquiryId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: inquiryId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+
+  # ---------- Compute: Lambda ----------
+  FunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: inquiry-least-privilege
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt InquiryTable.Arn
+              - Effect: Allow
+                Action: ses:SendEmail
+                Resource: !Sub
+                  - 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${SenderDomain}'
+                  - SenderDomain: !Select [1, !Split ['@', !Ref SenderEmail]]
+                Condition:
+                  StringEquals:
+                    'ses:FromAddress': !Ref SenderEmail
+
+  InquiryFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+      Role: !GetAtt FunctionRole.Arn
+      Timeout: 10
+      MemorySize: 128
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref InquiryTable
+          OWNER_EMAIL: !Ref OwnerEmail
+          SENDER_EMAIL: !Ref SenderEmail
+      # Placeholder only. scripts/deploy.sh uploads the real code from src/handler.py.
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+              return {"statusCode": 503, "body": "not deployed yet"}
+
+  FunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${InquiryFunction}'
+      RetentionInDays: 14
+
+  # ---------- API: API Gateway HTTP API ----------
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: inquiry-api
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - !GetAtt SiteBucket.WebsiteURL
+        AllowMethods:
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - content-type
+        MaxAge: 600
+
+  ApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt InquiryFunction.Arn
+      PayloadFormatVersion: '2.0'
+
+  ApiRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'POST /inquiries'
+      Target: !Sub 'integrations/${ApiIntegration}'
+
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: $default
+      AutoDeploy: true
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 10
+        ThrottlingRateLimit: 5
+
+  ApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref InquiryFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/inquiries'
+
+Outputs:
+  SiteUrl:
+    Value: !GetAtt SiteBucket.WebsiteURL
+  ApiUrl:
+    Value: !GetAtt HttpApi.ApiEndpoint
+  BucketName:
+    Value: !Ref SiteBucket
+  FunctionName:
+    Value: !Ref InquiryFunction
+  TableName:
+    Value: !Ref InquiryTable
